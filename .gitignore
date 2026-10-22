@@ -1,5 +1,8 @@
 __pycache__/
 *.pyc
+.venv/
+.uv-cache/
+build/
 .DS_Store
 
 # organizer-only evaluation material

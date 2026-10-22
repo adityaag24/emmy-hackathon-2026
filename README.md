@@ -1,5 +1,66 @@
 # Emmy Hackathon — write a PTX compiler for Kernel IR
 
+## Implemented compiler
+
+This repository now includes a direct Kernel IR to PTX compiler. It uses Emmy only
+to deserialize typed IR, and implements the lowering in [emmy_ptx.py](emmy_ptx.py).
+The submission entry point is [compile.py](compile.py).
+
+```bash
+python -m pip install -r requirements.txt
+python compile.py problems/r01_array_sum/k_sum_1_reduce.ir.json > out.ptx
+ptxas -arch=sm_89 out.ptx -o out.cubin
+python submit.py r01_array_sum --compiler compile.py
+```
+
+Keep `meta.json` beside the input IR: it supplies the positional parameter order
+and launch descriptor. The compiler writes ASCII PTX 8.0 targeting `sm_89` and
+requires no GPU or CUDA installation to generate that text. `ptxas` is required
+for assembly; a GPU is required for execution.
+
+**Verified on October 22, 2026:** all 15 open problems pass both on a local NVIDIA
+RTX 3500 Ada Generation Laptop GPU and through the official RTX 5090 runner using
+`submit.py --compiler compile.py`. This covers all five categories. Hidden-set
+correctness has not been tested. See the [review and benchmark report](docs/REVIEW_AND_BENCHMARK.md)
+for repeated measurements against the public CUDA Toolkit 13.4 `nvcc`.
+
+```bash
+python -m unittest discover -s tests -v
+python tools/validate.py --assemble-only  # needs ptxas, no GPU
+python tools/validate.py                  # needs ptxas and an NVIDIA GPU
+```
+
+The local validator uses the CUDA Driver API directly, with no CUDA C++ or torch.
+Set `EMMY_PTX_GPU_TESTS=1` when running the unit tests to execute the additional
+synthetic IR cases on a GPU. Generated PTX, cubins and test reports go into ignored
+`build/` directories.
+
+Supported data is static-shape `f32` with one-dimensional launches. The backend
+handles scalar and vector memory operations, arithmetic, loops, conditionals,
+reductions, shared memory, asynchronous copies, atomics and online softmax state.
+Raster hints use an equivalent row-major CTA order; loop unroll hints retain
+runtime loops. Tensor cores, TMA, software shared-memory swizzles, dynamic shapes,
+by-value scalars and serial runtime axes are outside this implementation's scope.
+
+- [Demo video script](docs/DEMO_VIDEO_SCRIPT.md): a four-and-a-half-minute recording plan.
+- [Project and line-by-line code walkthrough](docs/PROJECT_WALKTHROUGH.md): architecture,
+  lowering details, source annotations, validation evidence and limitations.
+- [Code review and compilation benchmark](docs/REVIEW_AND_BENCHMARK.md): reproduced
+  defects, fixes, timing methodology, measured results and reproduction commands.
+
+For autotuning, `python compile.py --worker` accepts JSON-line requests such as
+`{"ir":"path/to/kernel.ir.json"}` and returns `{"ok":true,"ptx":"..."}` per
+request. Keeping that process alive amortizes Python and Emmy imports. Python
+callers can instead import `compile_file` from `emmy_ptx` once. The required
+single-file command continues to emit plain PTX and includes fresh-process
+startup costs. The existing `submit.py` uses that single-file path.
+
+```bash
+python tools/benchmark.py --repetitions 5 --warmups 1 --verify
+```
+
+## Original hackathon brief
+
 Emmy (github.com/cloudrift-ai/emmy) compiles PyTorch to CUDA C++ and builds it with `nvcc`.
 **Your task: write a compiler that takes Emmy's Kernel IR and emits PTX directly**, skipping the
 CUDA C++ step. `ptxas` turns PTX into the same GPU binary ~19× faster than the full `nvcc`
